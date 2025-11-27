@@ -1,13 +1,15 @@
 # 🍃 ResilientHQ Mobile App (Portfolio Snapshot)
 
-![Build Status](https://img.shields.io/badge/build-expo-blue?logo=expo)  
-![Proprietary](https://img.shields.io/badge/license-proprietary-red)  
-![React Native](https://img.shields.io/badge/React%20Native-0.81.5-61DAFB?logo=react&logoColor=20232A)  
-![Expo SDK](https://img.shields.io/badge/Expo%20SDK-54.0.25-000000?logo=expo)  
-![Expo Router](https://img.shields.io/badge/Expo%20Router-000000?logo=expo-router)  
-![Reanimated](https://img.shields.io/badge/Reanimated-5cdb98?logo=react)  
-![TypeScript](https://img.shields.io/badge/TypeScript-5f72b0?logo=typescript)  
-![Visitors](https://visitor-badge.laobi.icu/badge?page_id=ResilientHQ.ResilientHQ)
+<p align="center">
+  <img src="https://img.shields.io/badge/build-expo-blue?logo=expo" />
+  <img src="https://img.shields.io/badge/license-proprietary-red" />
+  <img src="https://img.shields.io/badge/React%20Native-0.81.5-61DAFB?logo=react&logoColor=20232A" />
+  <img src="https://img.shields.io/badge/Expo%20SDK-54.0.25-000000?logo=expo" />
+  <img src="https://img.shields.io/badge/Expo%20Router-000000?logo=expo-router" />
+  <img src="https://img.shields.io/badge/Reanimated-5cdb98?logo=react" />
+  <img src="https://img.shields.io/badge/TypeScript-5f72b0?logo=typescript" />
+  <img src="https://visitor-badge.laobi.icu/badge?page_id=ResilientHQ.ResilientHQ" />
+</p>
 
 *Portfolio Status: Screenshots and sanitized UI assets will be added shortly.*
 
