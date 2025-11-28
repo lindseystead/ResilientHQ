@@ -19,7 +19,7 @@
 
 ### **Problem**
 
-Users need a responsive wellness companion that unifies journaling, mood tracking, community support, and AI-guided reflection, but existing solutions either lack integration, require constant server connectivity, or don't provide a cohesive mobile experience.
+Users need a cross-platform responsive wellness companion that unifies journaling, mood tracking, community support, and AI-guided reflection, but existing solutions either lack integration, require constant server connectivity, or don't provide a cohesive mobile experience.
 
 ### **Solution**
 
