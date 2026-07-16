@@ -1,0 +1,29 @@
+name: Feature request
+description: Propose an improvement.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement
+      description: What user or engineering problem are we solving?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the target behavior and architecture impact.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope and non-goals
+      description: What is in scope, and what is explicitly out of scope?
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation plan
+      description: How will this be tested or measured?

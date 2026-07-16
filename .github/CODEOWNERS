@@ -1,0 +1,9 @@
+# Default owner for everything in the repo
+* @lindseystead
+
+# Architecture and safety-critical paths
+/server/ @lindseystead
+/src/domains/ @lindseystead
+/src/features/chatbot/ @lindseystead
+/src/services/security/ @lindseystead
+/docs/ @lindseystead

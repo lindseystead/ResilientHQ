@@ -1,0 +1,343 @@
+/**
+ * Firestore Security Rules
+ * 
+ * Production security rules for ResilientHQ Firestore database.
+ * These rules enforce authentication, authorization, and data validation
+ * for all collections: posts, comments, resources, events, journals, mood logs,
+ * resilience check-ins, and chats.
+ */
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper function to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Helper function to check if user owns the document
+    function isOwner(authorId) {
+      return isAuthenticated() && authorId == request.auth.uid;
+    }
+
+    function changedKeys() {
+      return request.resource.data.diff(resource.data).changedKeys();
+    }
+    
+    // Helper function to validate post/comment data
+    function isValidPostData() {
+      return request.resource.data.keys().hasOnly([
+          'authorId',
+          'authorName',
+          'authorAvatar',
+          'category',
+          'content',
+          'createdAt',
+          'flagCount',
+          'isHidden'
+        ])
+        && request.resource.data.keys().hasAll(['authorId', 'authorName', 'authorAvatar', 'category', 'content', 'createdAt'])
+        && request.resource.data.authorId is string
+        && request.resource.data.authorName is string
+        && request.resource.data.authorAvatar is string
+        && request.resource.data.category is string
+        && request.resource.data.content is string
+        && request.resource.data.content.size() > 0
+        && request.resource.data.content.size() <= 1000
+        && request.resource.data.flagCount is int
+        && request.resource.data.flagCount == 0
+        && request.resource.data.isHidden is bool
+        && request.resource.data.isHidden == false
+        && request.resource.data.createdAt == request.time;
+    }
+    
+    function isValidCommentData() {
+      return request.resource.data.keys().hasOnly([
+          'authorId',
+          'authorName',
+          'authorAvatar',
+          'content',
+          'createdAt',
+          'flagCount',
+          'isHidden'
+        ])
+        && request.resource.data.keys().hasAll(['authorId', 'authorName', 'authorAvatar', 'content', 'createdAt'])
+        && request.resource.data.authorId is string
+        && request.resource.data.authorName is string
+        && request.resource.data.authorAvatar is string
+        && request.resource.data.content is string
+        && request.resource.data.content.size() > 0
+        && request.resource.data.content.size() <= 500
+        && request.resource.data.flagCount is int
+        && request.resource.data.flagCount == 0
+        && request.resource.data.isHidden is bool
+        && request.resource.data.isHidden == false
+        && request.resource.data.createdAt == request.time;
+    }
+
+    function isValidReportData(reportUserId) {
+      return request.resource.data.keys().hasOnly(['userId', 'reason', 'createdAt'])
+        && request.resource.data.userId == reportUserId
+        && request.resource.data.reason is string
+        && request.resource.data.reason.size() > 0
+        && request.resource.data.reason.size() <= 500
+        && request.resource.data.createdAt == request.time;
+    }
+
+    function hasValidPostReportWrite(postId) {
+      let reportPath = /databases/$(database)/documents/posts/$(postId)/reports/$(request.auth.uid);
+      let reportAfter = getAfter(reportPath);
+      return !exists(reportPath)
+        && reportAfter != null
+        && reportAfter.data.userId == request.auth.uid
+        && reportAfter.data.reason is string
+        && reportAfter.data.reason.size() > 0
+        && reportAfter.data.reason.size() <= 500
+        && reportAfter.data.createdAt == request.time;
+    }
+
+    function hasValidCommentReportWrite(postId, commentId) {
+      let reportPath = /databases/$(database)/documents/posts/$(postId)/comments/$(commentId)/reports/$(request.auth.uid);
+      let reportAfter = getAfter(reportPath);
+      return !exists(reportPath)
+        && reportAfter != null
+        && reportAfter.data.userId == request.auth.uid
+        && reportAfter.data.reason is string
+        && reportAfter.data.reason.size() > 0
+        && reportAfter.data.reason.size() <= 500
+        && reportAfter.data.createdAt == request.time;
+    }
+
+    function isValidPostReportDrivenModerationUpdate(postId) {
+      let keys = changedKeys();
+      let currentFlags = resource.data.flagCount is int ? resource.data.flagCount : 0;
+      return isAuthenticated()
+        && keys.hasOnly(['flagCount', 'isHidden'])
+        && request.resource.data.flagCount is int
+        && request.resource.data.flagCount == currentFlags + 1
+        && hasValidPostReportWrite(postId)
+        && (
+          !keys.hasAny(['isHidden'])
+          || (
+            request.resource.data.isHidden is bool
+            && request.resource.data.isHidden == true
+            && request.resource.data.flagCount >= 3
+          )
+        );
+    }
+
+    function isValidCommentReportDrivenModerationUpdate(postId, commentId) {
+      let keys = changedKeys();
+      let currentFlags = resource.data.flagCount is int ? resource.data.flagCount : 0;
+      return isAuthenticated()
+        && keys.hasOnly(['flagCount', 'isHidden'])
+        && request.resource.data.flagCount is int
+        && request.resource.data.flagCount == currentFlags + 1
+        && hasValidCommentReportWrite(postId, commentId)
+        && (
+          !keys.hasAny(['isHidden'])
+          || (
+            request.resource.data.isHidden is bool
+            && request.resource.data.isHidden == true
+            && request.resource.data.flagCount >= 3
+          )
+        );
+    }
+
+    function isValidOwnerContentUpdate() {
+      let keys = changedKeys();
+      return keys.hasOnly(['content', 'updatedAt', 'isEdited'])
+        && keys.hasAny(['content'])
+        && !keys.hasAny(['flagCount', 'isHidden'])
+        && request.resource.data.authorId == resource.data.authorId;
+    }
+
+    function isValidCheckInScore(value) {
+      return value is int && value >= 1 && value <= 5;
+    }
+
+    function isValidOptionalCheckInReflection() {
+      return !request.resource.data.keys().hasAny(['reflection'])
+        || (
+          request.resource.data.reflection is string
+          && request.resource.data.reflection.size() <= 1000
+        );
+    }
+    
+    // Posts collection
+    match /posts/{postId} {
+      // Anyone authenticated can read posts
+      allow read: if isAuthenticated();
+      
+      // Only authenticated users can create posts with valid data
+      allow create: if isAuthenticated() 
+        && request.resource.data.authorId == request.auth.uid
+        && isValidPostData();
+      
+      // Users can only update/delete their own posts
+      allow update: if isAuthenticated() 
+        && (
+          (isOwner(resource.data.authorId) && isValidOwnerContentUpdate())
+          || isValidPostReportDrivenModerationUpdate(postId)
+        );
+      
+      allow delete: if isAuthenticated() 
+        && isOwner(resource.data.authorId);
+      
+      // Comments subcollection
+      match /comments/{commentId} {
+        // Anyone authenticated can read comments
+        allow read: if isAuthenticated();
+        
+        // Only authenticated users can create comments with valid data
+        allow create: if isAuthenticated() 
+          && request.resource.data.authorId == request.auth.uid
+          && isValidCommentData();
+        
+        // Users can only update/delete their own comments
+        allow update: if isAuthenticated() 
+          && (
+            (isOwner(resource.data.authorId) && isValidOwnerContentUpdate())
+            || isValidCommentReportDrivenModerationUpdate(postId, commentId)
+          );
+        
+        allow delete: if isAuthenticated() 
+          && isOwner(resource.data.authorId);
+
+        // Per-comment report records
+        match /reports/{reportUserId} {
+          allow create: if isAuthenticated()
+            && reportUserId == request.auth.uid
+            && isValidReportData(reportUserId);
+          allow read: if isAuthenticated() && reportUserId == request.auth.uid;
+        }
+      }
+
+      // Per-post report records
+      match /reports/{reportUserId} {
+        allow create: if isAuthenticated()
+          && reportUserId == request.auth.uid
+          && isValidReportData(reportUserId);
+        allow read: if isAuthenticated() && reportUserId == request.auth.uid;
+      }
+    }
+    
+    // Resources collection
+    match /resources/{resourceId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() 
+        && request.resource.data.authorId == request.auth.uid
+        && request.resource.data.keys().hasAll(['authorId', 'authorName', 'authorAvatar', 'content', 'createdAt'])
+        && request.resource.data.content is string
+        && request.resource.data.content.size() > 0;
+      allow update, delete: if isAuthenticated() 
+        && isOwner(resource.data.authorId);
+    }
+    
+    // Events collection
+    match /events/{eventId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() 
+        && request.resource.data.authorId == request.auth.uid
+        && request.resource.data.keys().hasAll(['authorId', 'authorName', 'authorAvatar', 'content', 'createdAt'])
+        && request.resource.data.content is string
+        && request.resource.data.content.size() > 0;
+      allow update, delete: if isAuthenticated() 
+        && isOwner(resource.data.authorId);
+    }
+
+    // Journal entries collection
+    // Path: /journals/{userId}/entries/{entryId}
+    match /journals/{userId}/entries/{entryId} {
+      // Users can only read their own journal entries
+      allow read: if isAuthenticated() && request.auth.uid == userId;
+      // Users can only create entries in their own journal
+      allow create: if isAuthenticated() 
+        && request.auth.uid == userId
+        && request.resource.data.userId == userId
+        && request.resource.data.keys().hasAll(['userId', 'date', 'mood', 'prompt', 'entry', 'timestamp']);
+      // Users can only update/delete their own entries
+      allow update, delete: if isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Mood logs collection
+    // Path: /moods/{userId}/logs/{moodId}
+    match /moods/{userId}/logs/{moodId} {
+      // Users can only read their own mood logs
+      allow read: if isAuthenticated() && request.auth.uid == userId;
+      // Users can only create logs in their own mood collection
+      allow create: if isAuthenticated() 
+        && request.auth.uid == userId
+        && request.resource.data.userId == userId
+        && request.resource.data.keys().hasAll(['userId', 'moodValue', 'moodEmoji', 'moodLabel', 'timestamp']);
+      // Users can only update/delete their own mood logs
+      allow update, delete: if isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Resilience check-ins collection
+    // Path: /resilienceCheckIns/{userId}/entries/{checkInId}
+    match /resilienceCheckIns/{userId}/entries/{checkInId} {
+      allow read: if isAuthenticated() && request.auth.uid == userId;
+
+      allow create: if isAuthenticated()
+        && request.auth.uid == userId
+        && request.resource.data.keys().hasOnly([
+          'userId',
+          'moodValue',
+          'sleepQuality',
+          'energyLevel',
+          'stressLevel',
+          'bodyTension',
+          'connectionLevel',
+          'safetyLevel',
+          'reflection',
+          'createdAt'
+        ])
+        && request.resource.data.keys().hasAll([
+          'userId',
+          'moodValue',
+          'sleepQuality',
+          'energyLevel',
+          'stressLevel',
+          'bodyTension',
+          'connectionLevel',
+          'safetyLevel',
+          'createdAt'
+        ])
+        && request.resource.data.userId == userId
+        && isValidCheckInScore(request.resource.data.moodValue)
+        && isValidCheckInScore(request.resource.data.sleepQuality)
+        && isValidCheckInScore(request.resource.data.energyLevel)
+        && isValidCheckInScore(request.resource.data.stressLevel)
+        && isValidCheckInScore(request.resource.data.bodyTension)
+        && isValidCheckInScore(request.resource.data.connectionLevel)
+        && isValidCheckInScore(request.resource.data.safetyLevel)
+        && isValidOptionalCheckInReflection()
+        && request.resource.data.createdAt == request.time;
+
+      // Check-ins are append-only snapshots.
+      allow update: if false;
+      allow delete: if isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Chat history collection
+    // Path: /chats/{userId}/messages/{messageId}
+    match /chats/{userId}/messages/{messageId} {
+      allow read: if isAuthenticated() && request.auth.uid == userId;
+
+      allow create: if isAuthenticated()
+        && request.auth.uid == userId
+        && request.resource.data.keys().hasOnly(['userId', 'role', 'content', 'timestamp'])
+        && request.resource.data.userId == userId
+        && request.resource.data.role in ['user', 'assistant']
+        && request.resource.data.content is string
+        && request.resource.data.content.size() > 0
+        && request.resource.data.content.size() <= 4000
+        && request.resource.data.timestamp == request.time;
+
+      // Chat messages are append-only; clients can delete during history clear.
+      allow update: if false;
+      allow delete: if isAuthenticated() && request.auth.uid == userId;
+    }
+  }
+}
